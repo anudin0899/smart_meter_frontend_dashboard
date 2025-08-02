@@ -1,155 +1,76 @@
-import { FC, useEffect, useMemo, useState } from "react";
-import { Package, TrendingUp, Percent } from "lucide-react";
-import { categoryData } from "../../services/mockData";
-import SkeletonCard from "@/components/SkeletonCard";
-import { getLatestPerMeterCode } from "@/contexts/getLatestData";
+import React, { FC, useEffect, useState } from "react";
 import axios from "axios";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  TimeScale,
-} from "chart.js";
+import { Package, TrendingUp, Percent } from "lucide-react";
 
-import { Line } from "react-chartjs-2";
+// Import types from the centralized types file
+import { MeterReading, PeakTimeData, ResampledItem, StatusData } from "@/types";
+import KpiCard from "@/components/KpiCard";
+import LineChartComponent from "@/components/LineChart";
+import UsageChart from "@/components/UsageChart";
 import MeterSelector from "@/components/MeterSelector";
 
-
-// --- 1. Define the Custom Plugin for Peak Lines ---
-const peakLinesPlugin = {
-  id: 'peakLines',
-  afterDatasetsDraw(chart, args, options) {
-    const { ctx, chartArea: { top, bottom, left, right }, scales: { x } } = chart;
-
-    // Check if peak data is available from the options
-    if (!options.peakData) {
-      return;
-    }
-
-    const { morning_peak_hour, night_peak_hour } = options.peakData;
-
-    // Helper function to draw a line and its label
-    const drawPeakLine = (hour, label, color) => {
-      if (hour === null || hour === undefined) return;
-
-      // Find the x-coordinate for the given hour on the time scale
-      // We need to find a date in the data that has this hour
-      const targetDate = chart.data.datasets[0].data.find(d => new Date(d.x).getHours() === hour);
-      if (!targetDate) return; // If no data point for this hour exists, we can't draw the line
-
-      const xCoord = x.getPixelForValue(new Date(targetDate.x));
-
-      // Draw the vertical line
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(xCoord, top);
-      ctx.lineTo(xCoord, bottom);
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = color;
-      ctx.stroke();
-
-      // Draw the label
-      ctx.fillStyle = color;
-      ctx.textAlign = 'center';
-      ctx.fillText(label, xCoord, top - 5);
-      ctx.restore();
-    };
-
-    drawPeakLine(morning_peak_hour, 'Morning Peak', 'rgba(255, 159, 64, 1)');
-    drawPeakLine(night_peak_hour, 'Night Peak', 'rgba(75, 192, 192, 1)');
-  }
-};
-
-// --- 2. Register all components, including the new plugin ---
-ChartJS.register(
-  CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TimeScale,
-  peakLinesPlugin // Register the custom plugin
-);
+// Import reusable UI and Chart components
 
 
-export interface MeterReading {
-  FR: number;
-  FV: number;
-  LocalTimeCol: string;
-  MeterCode: string;
-  NetTotal: number;
-  [key: string]: any; // allows extra unknown fields
-}
-
-interface PeakTimeData {
-  morning_peak_hour: number | null;
-  morning_peak_fv: number | null;
-  night_peak_hour: number | null;
-  night_peak_fv: number | null;
-}
-
-interface Props {
-  // loading: boolean;
+interface HomeProps {
   tableData: MeterReading[];
 }
 
-type MeterData = {
-  [key: string]: any[]; // if values are arrays of any type
-};
-
-interface ResampledItem { ds: string; FV: number; }
-interface PeakTimeData {
-  morning_peak_hour: number | null;
-  night_peak_hour: number | null;
-}
-
-
-const Home: FC<Props> = ({ tableData }) => {
-
+const Home: FC<HomeProps> = ({ tableData }) => {
+  // --- State Management ---
   const [meterCodes, setMeterCodes] = useState<string[]>([]);
   const [selectedMeter, setSelectedMeter] = useState<string>("");
   const [resampledData, setResampledData] = useState<ResampledItem[]>([]);
+  const [hourlyData, setHourlyData] = useState<ResampledItem[]>([]);
+  const [dailyData, setDailyData] = useState<ResampledItem[]>([]);
   const [peakTimes, setPeakTimes] = useState<PeakTimeData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<MeterData>({});
+  const [statusData, setStatusData] = useState<StatusData>({});
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // --- Utility Functions ---
+  const formatTimestamp = (timestamp: string | null | undefined): string => {
+    if (!timestamp) return "N/A";
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "Invalid date";
+      return date.toLocaleString("en-IN", { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: true });
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return "Error";
+    }
+  };
 
-
+  // --- Data Fetching Effects ---
+  // Effect to fetch general status data periodically
   useEffect(() => {
-    const fetchData = () => {
+    const fetchStatus = () => {
       axios.get('http://localhost:5000/api/status')
-        .then(res => {
-          setData(res.data);
-        })
-        .catch(err => console.error(err));
+        .then(res => setStatusData(res.data))
+        .catch(err => console.error('Failed to fetch status:', err));
     };
-    fetchData();
-    const interval = setInterval(fetchData, 30000);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000);
     return () => clearInterval(interval);
-  }, [tableData]);
+  }, []);
 
-
-
-
+  // Effect to fetch the list of available meter codes once on component mount
   useEffect(() => {
     const fetchMeterCodes = async () => {
       try {
         const res = await axios.get<{ meter_codes: string[] }>("http://localhost:5000/api/meter_codes");
-        setMeterCodes(res.data.meter_codes);
-        if (res.data.meter_codes.length > 0) {
-          setSelectedMeter(res.data.meter_codes[0]);
+        const codes = res.data.meter_codes;
+        setMeterCodes(codes);
+        // Set the first meter as the default selection
+        if (codes.length > 0 && !selectedMeter) {
+          setSelectedMeter(codes[0]);
         }
       } catch (err) {
-        console.error("Error fetching meter codes", err);
         setError("Failed to load meter codes.");
       }
     };
     fetchMeterCodes();
   }, []);
-
-
-
 
 
   useEffect(() => {
@@ -168,7 +89,6 @@ const Home: FC<Props> = ({ tableData }) => {
         }
         const { peak_times, resampled_data, rolling_average_data } = parsedData;
         setResampledData(resampled_data || []);
-
         if (peak_times && peak_times.length > 0) {
           setPeakTimes(peak_times[0]);
         } else {
@@ -183,275 +103,128 @@ const Home: FC<Props> = ({ tableData }) => {
     fetchAllDataForMeter();
   }, [selectedMeter]);
 
+  // Effect to fetch all chart-related data whenever the selected meter changes
+  useEffect(() => {
+    if (!selectedMeter) return;
+    const fetchAllChartData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Fetch all data in parallel for efficiency
+        const [hourlyRes, dailyRes] = await Promise.all([
+          axios.get(`http://localhost:5000/api/hourly_resampled?meter_code=${selectedMeter}`),
+          axios.get(`http://localhost:5000/api/daily_resampled?meter_code=${selectedMeter}`),
+    
+        ]);
 
-
-
-
-  const hourlyChartOptions = useMemo(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { position: "top" as const },
-    title: { display: true, text: `Hourly Water Usage Pattern for ${selectedMeter}` },
-    peakLines: { peakData: peakTimes },
-  },
-  scales: {
-    x: {
-      type: 'time',
-      time: {
-        unit: 'hour',
-        displayFormats: {
-          hour: 'HH:mm',
+        let hourlyparsedData;
+        if (typeof hourlyRes.data === "string") {
+          const cleanedData = hourlyRes.data.replace(/\bNaN\b/g, "null");
+          hourlyparsedData = JSON.parse(cleanedData);
+        } else {
+          hourlyparsedData = hourlyRes.data;
         }
-      },
-      title: { display: true, text: 'Hour of Day' },
-      grid: { drawOnChartArea: false },
-    },
-    y: {
-      beginAtZero: true,
-      title: { display: true, text: 'Average Flow Volume (FV)' }
-    },
-  },
-}), [selectedMeter, peakTimes]);
+
+        let dailyparsedData;
+        if (typeof dailyRes.data === "string") {
+          const cleanedData = dailyRes.data.replace(/\bNaN\b/g, "null");
+          dailyparsedData = JSON.parse(cleanedData);
+        } else {
+          dailyparsedData = dailyRes.data;
+        }
+
+        setHourlyData(hourlyparsedData || []);
+        setDailyData(dailyparsedData || []);
+
+      } catch (err) {
+        console.error("Error fetching chart data:", err);
+        setError("Failed to load chart data for the selected meter.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllChartData();
+  }, [selectedMeter]);
 
 
-
-
+  console.log(hourlyData,"hourly data");
+  console.log(dailyData,"hourly data");
   
 
-  const hourlyChartData = useMemo(() => {
-    if (!resampledData.length) return { labels: [], datasets: [] };
-
-    const hourlyMap = new Map<number, number[]>();
-    resampledData.forEach(item => {
-      const hour = new Date(item.ds).getUTCHours();
-      if (!hourlyMap.has(hour)) hourlyMap.set(hour, []);
-      hourlyMap.get(hour)!.push(item.FV);
-    });
-
-    const hourlyAverages = Array.from({ length: 24 }, (_, hour) => {
-      const values = hourlyMap.get(hour);
-      return values ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-    });
-
-    // Create data with dummy date for each hour (e.g., Jan 1, 2023)
-    const hourlyAveragesData = hourlyAverages.map((value, hour) => ({
-      x: new Date(2023, 0, 1, hour).toISOString(),
-      y: value
-    }));
-
-    // Rolling average
-    const paddedAvgs = [...hourlyAverages.slice(-2), ...hourlyAverages, ...hourlyAverages.slice(0, 2)];
-    const rollingAvg = [];
-    for (let i = 0; i < 24; i++) {
-      const window = paddedAvgs.slice(i, i + 4);
-      rollingAvg.push(window.reduce((sum, val) => sum + val, 0) / window.length);
-    }
-
-    const rollingAvgData = rollingAvg.map((value, hour) => ({
-      x: new Date(2023, 0, 1, hour).toISOString(),
-      y: value
-    }));
-
-    return {
-      datasets: [
-        {
-          label: 'Average Hourly Usage',
-          data: hourlyAveragesData,
-          borderColor: 'rgba(54, 162, 235, 0.4)',
-          backgroundColor: 'rgba(54, 162, 235, 0.2)',
-          fill: true,
-          tension: 0.4,
-        },
-        {
-          label: '4-Hour Rolling Mean',
-          data: rollingAvgData,
-          borderColor: 'rgba(255, 99, 132, 1)',
-          borderWidth: 2,
-          tension: 0.4,
-        }
-      ]
-    };
-  }, [resampledData]);
-
-
-
-
-
-
-
-
-  const totalLatestDataCount = tableData.length || 0;
-  const uniqueMeters = Array.from(new Set(tableData.map(d => d.MeterCode)));
-  const totalMeterCount = uniqueMeters.length;
-  const totalToday = tableData.reduce((sum, d) => sum + d.Today, 0);
-  const avgToday = totalLatestDataCount > 0 ? totalToday / totalLatestDataCount : 0;
-
-
+  // --- Render Logic ---
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 p-4 md:p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Data</h1>
-        <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Data Dashboard</h1>
+      </div>
 
+      {/* KPI Cards Section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <KpiCard icon={TrendingUp} title="Total Historical Records" value={statusData.total_historical_records?.toLocaleString() ?? '...'} color="blue" />
+        <KpiCard icon={Percent} title="Last Processed Time" value={formatTimestamp(statusData.last_processed_time_in_memory)} color="green" />
+        <KpiCard icon={Package} title="Active Meters" value={statusData.total_meters ?? '...'} color="purple" />
+      </div>
+
+      {/* Trend Analysis Section */}
+      <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow-lg">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 border-b border-gray-200 dark:border-gray-700 gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Usage Trend Analysis</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Daily and hourly patterns for Flow Volume and Flow Rate</p>
+          </div>
+          <MeterSelector selectedMeter={selectedMeter} onMeterChange={setSelectedMeter} meterCodes={meterCodes} />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div className="h-72"><LineChartComponent data={dailyData} loading={loading} error={error} dataKey="FV" timeUnit="daily" /></div>
+            <div className="h-72"><LineChartComponent data={dailyData} loading={loading} error={error} dataKey="FR" timeUnit="daily" /></div>
+            <div className="h-72"><LineChartComponent data={hourlyData} loading={loading} error={error} dataKey="FV" timeUnit="hourly" /></div>
+            <div className="h-72"><LineChartComponent data={hourlyData} loading={loading} error={error} dataKey="FR" timeUnit="hourly" /></div>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* Peak Time Analysis Section */}
+      <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow-lg">
 
-        {tableData.length > 0 ?
-          <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow h-28">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                <TrendingUp className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Data</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {data?.total_historical_records}
-                </p>
-              </div>
-            </div>
-          </div>
-          :
-          <SkeletonCard />
-        }
-
-        {tableData.length > 0 ?
-          <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow h-28">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
-                <Percent className="h-6 w-6 text-green-600 dark:text-green-400" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Last processed Timestamp </p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {data?.last_processed_time_in_memory}
-                </p>
-              </div>
-            </div>
-          </div>
-          :
-          <SkeletonCard />
-        }
-
-        {tableData.length > 0 ?
-          <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow h-28">
-            <div className="flex items-center">
-              <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
-                <Package className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total MeterCodes</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">
-                  {data?.total_meters}
-                </p>
-              </div>
-            </div>
-          </div>
-          :
-          <SkeletonCard />
-        }
-
+        <div className="pb-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Peak Time Analysis</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Average hourly usage to identify peak periods</p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <div className="h-96"><UsageChart data={hourlyData} peakTimes={peakTimes} loading={loading} error={error} chartType="FV" /></div>
+          <div className="h-96"><UsageChart data={hourlyData} peakTimes={peakTimes} loading={loading} error={error} chartType="FR" /></div>
+        </div>
       </div>
 
-      {/* Table */}
-      <div style={{ minHeight: "340px" }} className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow h-86">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Latest Data Details
-        </h3>
-        <div className="" style={{ maxHeight: "280px", minHeight: "60px", overflowY: "auto", overflowX: "auto" }}>
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-700 overflow-y-auto " style={{ maxHeight: "280px", overflow: "auto" }}>
-            <thead className="bg-gray-100 dark:bg-dark-800 sticky top-0 z-10 overflow-y-hidden">
-              <tr className="">
-                {["LocalTimeCol", "Meter Code", "FV", "FR", "NetTotal", "Today"].map((header) => (
-                  <th
-                    key={header}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-100 dark:bg-dark-800"
-                  >
+      {/* Data Table Section */}
+      <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow-lg">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Latest Data Details</h3>
+        <div className="max-h-96 overflow-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
+            <thead className="bg-gray-100 dark:bg-dark-900 sticky top-0 z-10">
+              <tr>
+                {["Timestamp", "Meter Code", "FV", "FR", "NetTotal", "Today"].map((header) => (
+                  <th key={header} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     {header}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-dark-800 divide-y divide-gray-200 dark:divide-dark-700">
-              {/* {[...latestData]
-                .sort((a, b) => new Date(a.LocalTimeCol).getTime() - new Date(b.LocalTimeCol).getTime())
-                .map((row, index) => ( */}
               {tableData.map((row, index) => (
-                <tr
-                  key={index}
-                  className="hover:bg-gray-50 dark:hover:bg-dark-700 "
-                >
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                    {row.LocalTimeCol}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {row.MeterCode}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {row.FV}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {row.FR}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {row.NetTotal}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                    {row.Today}
-                  </td>
+                <tr key={index} className="hover:bg-gray-50 dark:hover:bg-dark-700">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{formatTimestamp(row.LocalTimeCol)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{row.MeterCode}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{row.FV}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{row.FR}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{row.NetTotal}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">{row.Today || 0}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
-
-      {/* Charts */}
-      <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold">Hourly Usage Analysis</h3>
-          <MeterSelector selectedMeter={selectedMeter} onMeterChange={setSelectedMeter} meterCodes={meterCodes} />
-        </div>
-        <div style={{ position: 'relative', height: '400px' }}>
-          {loading ? (<div className="h-full flex items-center justify-center">Loading Chart...</div>)
-            : error ? (<div className="h-full flex items-center justify-center text-red-500">{error}</div>)
-              : (resampledData.length > 0) ? (<Line data={hourlyChartData} options={hourlyChartOptions as any} />)
-                : (<div className="h-full flex items-center justify-center">No data available for this meter.</div>)}
-        </div>
-      </div>
-
-      {/* 
-      {selectedMeter ? (
-        <>
-         
-          <div className="card p-6 bg-white dark:bg-dark-800 rounded-lg shadow">
-            <div style={{ height: '400px' }}>
-              {loading ? (
-                <div className="h-full flex items-center justify-center">Loading Chart...</div>
-              ) : (peakTimes.length) ? (
-                <Line data={chartData} options={chartOptions as any} width={1000} height={400} />
-              ) : (
-                <div>No data available for the chart.</div>
-              )}
-            </div>
-          </div>
-
-          //  Data Table 
-        
-        </>
-      ) : (
-        <div className="flex items-center justify-center h-96 ">
-          <div className="bg-red-100 border border-red-400 flex items-center justify-center text-red-700 px-4 py-3 rounded w-full">
-            {loading ? "Please select a meter to view the forecast." : error ? error : "Loading..."}
-          </div>
-        </div>
-      )}
-
-    */}
-
     </div>
   );
 };
