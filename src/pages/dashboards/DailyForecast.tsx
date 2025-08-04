@@ -56,7 +56,7 @@ interface MergedDataItem {
   forecastValue: number | null;
 }
 
-const HourlyForecast: React.FC = () => {
+const DailyForecast: React.FC = () => {
   // State and useEffect hooks remain the same...
   const [meterCodes, setMeterCodes] = useState<string[]>([]);
   const [selectedMeter, setSelectedMeter] = useState<string>("");
@@ -278,4 +278,4 @@ const HourlyForecast: React.FC = () => {
   );
 };
 
-export default HourlyForecast;
+export default DailyForecast;

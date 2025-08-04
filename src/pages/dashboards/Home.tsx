@@ -61,7 +61,7 @@ const Home: FC<HomeProps> = ({ tableData }) => {
         const res = await axios.get<{ meter_codes: string[] }>("http://localhost:5000/api/meter_codes");
         const codes = res.data.meter_codes;
         setMeterCodes(codes);
-        // Set the first meter as the default selection
+
         if (codes.length > 0 && !selectedMeter) {
           setSelectedMeter(codes[0]);
         }
@@ -76,7 +76,7 @@ const Home: FC<HomeProps> = ({ tableData }) => {
   useEffect(() => {
     if (!selectedMeter) return;
     const fetchAllDataForMeter = async () => {
-      setLoading(true);
+      // setLoading(true);
       setError(null);
       try {
         const res = await axios.get(`http://localhost:5000/api/peak_times?meter_code=${selectedMeter}`);
@@ -107,7 +107,7 @@ const Home: FC<HomeProps> = ({ tableData }) => {
   useEffect(() => {
     if (!selectedMeter) return;
     const fetchAllChartData = async () => {
-      setLoading(true);
+      // setLoading(true);
       setError(null);
       try {
         // Fetch all data in parallel for efficiency
@@ -147,9 +147,6 @@ const Home: FC<HomeProps> = ({ tableData }) => {
     fetchAllChartData();
   }, [selectedMeter]);
 
-
-  console.log(hourlyData,"hourly data");
-  console.log(dailyData,"hourly data");
   
 
   // --- Render Logic ---

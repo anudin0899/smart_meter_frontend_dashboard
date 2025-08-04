@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import {
   BarChart3,
@@ -40,32 +40,58 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
 }) => {
   const { user, hasRole } = useAuth();
+  const [showText, setShowText] = useState(!isCollapsed);
+
+  // Handle text visibility based on collapse state
+  useEffect(() => {
+    if (isCollapsed) {
+      // Hide text immediately when collapsing
+      setShowText(false);
+    } else {
+      // Show text after sidebar expansion completes (300ms + small buffer)
+      const timer = setTimeout(() => {
+        setShowText(true);
+      }, 350); // Slightly longer than sidebar transition (300ms)
+
+      return () => clearTimeout(timer);
+    }
+  }, [isCollapsed]);
 
   const dashboardItems: SidebarItem[] = [
     { path: "/dashboard/home", icon: Map, label: "Home" },
+    // { path: "/dashboard/forecast", icon: TrendingUp, label: "Forecasting" },
+    // { path: "/dashboard/anomalies", icon: PieChart, label: "Anomalies" },
     { path: "/dashboard/daily", icon: TrendingUp, label: "Daily Forecasting" },
     { path: "/dashboard/hourly", icon: PieChart, label: "Hourly Forecasting" },
   ];
 
   const additionalItems: SidebarItem[] = [
     // ...(hasRole(["analyst", "admin"])
-    //   ? [{ path: "/chatbot", icon: MessageSquare, label: "AI Chatbot" }]
-    //   : []),
+    //   ? [{ path: "/chatbot", icon: MessageSquare, label: "AI Chatbot" }]
+    //   : []),
     ...(hasRole(["admin"])
       ? [{ path: "/users", icon: UserCog, label: "User Management" }]
       : []),
   ];
 
+  // Helper function for smooth text transitions
+  const getAnimatedTextClasses = () => {
+    return `transition-opacity duration-200 ease-in-out whitespace-nowrap ${showText ? "opacity-100" : "opacity-0"
+      }`;
+  };
+
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-dark-700">
-        <div className="flex items-center">
-          <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
+        <div className="flex items-center overflow-hidden">
+          <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center shrink-0">
             <BarChart3 className="h-5 w-5 text-white" />
           </div>
           {/* Hide title when collapsed */}
           {!isCollapsed && (
-            <span className="ml-3 text-xl font-bold text-gray-900 dark:text-white">
+            <span
+              className={`ml-3 text-xl font-bold text-gray-900 dark:text-white ${getAnimatedTextClasses()}`}
+            >
               Dashboard
             </span>
           )}
@@ -79,21 +105,22 @@ const Sidebar: React.FC<SidebarProps> = ({
         >
           <X className="h-4 w-4" />
         </button>
-
-
       </div>
 
       <nav className={`flex-1 py-6 space-y-2 ${isCollapsed ? 'px-2' : 'px-4'}`}>
-        <div className={`flex items-center hover:bg-gray-100 rounded-md p-2 mb-4 ${isCollapsed ? 'justify-center' : 'justify-between '}`} onClick={onToggleCollapse}>
+        <div className={`flex items-center hover:bg-gray-100 dark:hover:bg-dark-700 rounded-md p-2 mb-4 cursor-pointer ${isCollapsed ? 'justify-center' : 'justify-between '}`} onClick={onToggleCollapse}>
           {/* Desktop-only collapse button */}
           <button
-            className="p-1 rounded-lg text-gray-500  dark:hover:bg-dark-700 hidden lg:block"
+            className="p-1 rounded-lg text-gray-500 hidden lg:block"
             aria-label="Toggle sidebar collapse"
+            tabIndex={-1} // Prevent tabbing to the inner button
           >
             <ArrowLeft className={`h-5 w-5 transition-transform duration-300 ${isCollapsed ? 'rotate-180' : ''}`} />
           </button>
           {!isCollapsed && (
-            <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            <h3
+              className={`px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ${getAnimatedTextClasses()}`}
+            >
               Close
             </h3>
           )}
@@ -102,7 +129,9 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="mb-6">
           {/* Hide header text when collapsed */}
           {!isCollapsed && (
-            <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            <h3
+              className={`px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ${getAnimatedTextClasses()}`}
+            >
               Dashboards
             </h3>
           )}
@@ -112,7 +141,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) =>
-                  `sidebar-item flex items-center py-3 px-2 rounded-md ${isActive ? "active bg-blue-600 text-white dark:bg-blue-600" : ""
+                  `sidebar-item flex items-center py-3 px-2 rounded-md ${isActive ? "active bg-blue-600 text-white dark:bg-blue-600" : "hover:bg-gray-100 dark:hover:bg-dark-700"
                   } ${isCollapsed ? 'justify-center' : ''}`
                 }
                 onClick={() => onClose()} // Keep this for mobile to close overlay
@@ -121,7 +150,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <item.icon className={`h-5 w-5 shrink-0 ${!isCollapsed ? 'mr-3' : ''}`} />
                 {/* Hide label text when collapsed */}
                 {!isCollapsed && (
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <span
+                    className={`text-sm font-medium ${getAnimatedTextClasses()}`}
+                  >
+                    {item.label}
+                  </span>
                 )}
               </NavLink>
             ))}
@@ -132,7 +165,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div>
             {/* Hide header text when collapsed */}
             {!isCollapsed && (
-              <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <h3
+                className={`px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ${getAnimatedTextClasses()}`}
+              >
                 Tools
               </h3>
             )}
@@ -142,7 +177,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   key={item.path}
                   to={item.path}
                   className={({ isActive }) =>
-                    `sidebar-item flex items-center py-3 px-2 rounded-md ${isActive ? "active bg-blue-600 text-white dark:bg-blue-600" : ""
+                    `sidebar-item flex items-center py-3 px-2 rounded-md ${isActive ? "active bg-blue-600 text-white dark:bg-blue-600" : "hover:bg-gray-100 dark:hover:bg-dark-700"
                     } ${isCollapsed ? 'justify-center' : ''}`
                   }
                   onClick={() => onClose()}
@@ -151,7 +186,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <item.icon className={`h-5 w-5 shrink-0 ${!isCollapsed ? 'mr-3' : ''}`} />
                   {/* Hide label text when collapsed */}
                   {!isCollapsed && (
-                    <span className="text-sm font-medium">{item.label}</span>
+                    <span
+                      className={`text-sm font-medium ${getAnimatedTextClasses()}`}
+                    >
+                      {item.label}
+                    </span>
                   )}
                 </NavLink>
               ))}
@@ -159,8 +198,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
       </nav>
-
-
 
       <div className="p-4 py-8 border-t border-gray-200 dark:border-dark-700">
         <div className={`flex items-center ${isCollapsed ? 'justify-center' : ''}`}>
@@ -171,7 +208,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           />
           {/* Hide user info text when collapsed */}
           {!isCollapsed && (
-            <div className="ml-3">
+            <div className={`ml-3 overflow-hidden ${getAnimatedTextClasses()}`}>
               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user?.name}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user?.role}</p>
             </div>

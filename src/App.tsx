@@ -12,29 +12,28 @@ import DailyForecast from "./pages/dashboards/DailyForecast";
 import HourlyForecast from "./pages/dashboards/HourlyForecast";
 import Home from "./pages/dashboards/Home";
 import axios from "axios";
+import Forecast from "./pages/dashboards/Forecast";
 
-// ✅ Define type for a single meter reading
+
+
+
 export interface MeterReading {
   FR: number;
   FV: number;
   LocalTimeCol: string;
   MeterCode: string;
   NetTotal: number;
-  [key: string]: any; // allows extra unknown fields
+  Today: number;
+  [key: string]: any; // Allows for any other properties.
 }
-
 
 
 
 
 const App: React.FC = () => {
 
-
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [tableData, setTableData] = useState<MeterReading[] | null>(null);
-  const [dailyForecast, setDailyForecast] = useState<any[]>([]);
-  const [hourlyForecast, setHourlyForecast] = useState<any[]>([]);
+
 
 
 
@@ -71,6 +70,13 @@ const App: React.FC = () => {
                   </ProtectedRoute>
                 }
               >
+                <Route
+                  path="/dashboard/forecast"
+                  element={
+                    <Forecast />
+                  }
+                />
+
                 <Route
                   path="/dashboard/daily"
                   element={
